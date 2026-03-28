@@ -32,16 +32,16 @@ button[data-baseweb="tab"][aria-selected="true"]{color:#00ff88!important;border-
 .wallet-badge{font-family:'Space Mono',monospace;font-size:11px;color:#64748b;background:#0f0f1a;border:1px solid #1e1e30;border-radius:20px;padding:4px 12px;display:inline-block}
 .section-header{font-family:'Space Mono',monospace;font-size:11px;color:#00ff88;text-transform:uppercase;letter-spacing:2px;padding:8px 0;border-bottom:1px solid #00ff8830;margin-bottom:16px}
 .stPlotlyChart{border:1px solid #1e1e30;border-radius:10px}
-.ht-wrap{overflow-y:auto;border:1px solid #1e1e30;border-radius:8px}
-.ht{width:100%;border-collapse:collapse;font-family:'Space Mono',monospace;font-size:12px}
-.ht thead tr th{padding:10px 12px;text-align:left;color:#64748b;font-size:10px;text-transform:uppercase;letter-spacing:1px;background:#0f0f1a;border-bottom:1px solid #1e1e30;position:sticky;top:0;white-space:nowrap}
-.ht tbody tr{border-bottom:1px solid #0f0f1a;transition:background .1s}
-.ht tbody tr:hover{background:#0f0f1a}
-.ht tbody tr td{padding:8px 12px;color:#cbd5e1;white-space:nowrap}
-.ht a{color:#00aaff;text-decoration:none;font-weight:700}
-.ht a:hover{color:#00ff88;text-decoration:underline}
-.profit{color:#00ff88!important}
-.loss{color:#ff4466!important}
+.ht-wrap{overflow-y:auto;border:1px solid #e2e8f0;border-radius:8px;background:#ffffff}
+.ht{width:100%;border-collapse:collapse;font-family:'Space Mono',monospace;font-size:12px;background:#ffffff}
+.ht thead tr th{padding:10px 12px;text-align:left;color:#475569;font-size:10px;text-transform:uppercase;letter-spacing:1px;background:#f8fafc;border-bottom:2px solid #e2e8f0;position:sticky;top:0;white-space:nowrap}
+.ht tbody tr{border-bottom:1px solid #f1f5f9;transition:background .1s}
+.ht tbody tr:hover{background:#f8fafc}
+.ht tbody tr td{padding:8px 12px;color:#1e293b;white-space:nowrap}
+.ht a{color:#2563eb;text-decoration:none;font-weight:700}
+.ht a:hover{color:#00aa55;text-decoration:underline}
+.profit{color:#16a34a!important}
+.loss{color:#dc2626!important}
 .neutral{color:#64748b!important}
 .badge-closed{background:#00ff8820;color:#00ff88;border-radius:4px;padding:2px 6px;font-size:10px}
 .badge-open{background:#ffd70020;color:#ffd700;border-radius:4px;padding:2px 6px;font-size:10px}
