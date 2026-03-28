@@ -1,0 +1,25 @@
+# Pipeline — contains API key, never commit
+process_wallet.py
+
+# Wallet trade data — lives in Google Drive, not GitHub
+wallet_*.json
+
+# Local Drive cache folder
+wallet_data/
+
+# Fetch cache from pipeline
+_txns_*/
+
+# Python
+__pycache__/
+*.pyc
+.env
+*.egg-info/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
