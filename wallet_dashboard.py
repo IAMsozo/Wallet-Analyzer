@@ -63,7 +63,7 @@ button[data-baseweb="tab"][aria-selected="true"]{color:#00ff88!important;border-
 # ══════════════════════════════════════════════════════════════════
 DRIVE_WALLETS = {
     # "Wallet Display Name": "Google Drive File ID",
-    "HighWR53": "1KAJGCp4B92xICgSHhHH_z84UL26Cj7CU",
+    "HighWR53": "1dkN_NDEY89SkwA_e5Yn6sOqiRSGitI-M",
 }
 
 # ── Download wallet files from Drive on startup ────────────────────
