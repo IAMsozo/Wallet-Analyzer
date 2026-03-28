@@ -1,833 +1,803 @@
-"""
-Solana Wallet Trade Analyzer — Dashboard
-==========================================
-Deploy to Streamlit Community Cloud from a public GitHub repo.
-Contains ZERO API keys. Reads wallet_*.json from Google Drive.
-
-To add a wallet: add one line to DRIVE_WALLETS below.
-"""
-
-import os
-import json
-import shutil
-from datetime import datetime, timedelta
-
 import streamlit as st
+import json
+import os
 import pandas as pd
-import numpy as np
-import plotly.express as px
 import plotly.graph_objects as go
-import gdown
+from datetime import timedelta
 
-# ─────────────────────────────────────────────
-# WALLET CONFIG — EDIT THIS DICT TO ADD WALLETS
-# ─────────────────────────────────────────────
-# Format: "Display Name": "Google Drive File ID"
-# Get file ID from share link: https://drive.google.com/file/d/FILE_ID_HERE/view
-DRIVE_WALLETS = {
-    "HighWR53": "1Vh7dDNK9ACLUUM7llRICoiXZjo7Gi0QF",
-    "1hrHighWR": "11a3Ny8X1XewiZ4H1AkokTj8XV10e-EDN",
-    "20K2RNoDp": "12QsvOaMz0kNDifoYuMW6igfdZ7r3Rcs3",
-    "Investor": "15ZjBkoHAxXLuLyQMI4I5Cn3VBSvHwZVY",
-}
-
-CACHE_DIR = "wallet_data"
-
-# ─────────────────────────────────────────────
-# CONSTANTS
-# ─────────────────────────────────────────────
-DUST_USD = 1.0
-DUST_SOL = 0.01
-
-MC_BUCKET_ORDER = [
-    "Unknown", "<$10K", "$10K-$50K", "$50K-$100K",
-    "$100K-$500K", "$500K-$1M", "$1M-$10M", ">$10M",
-]
-
-# ─────────────────────────────────────────────
-# PAGE CONFIG
-# ─────────────────────────────────────────────
 st.set_page_config(
-    page_title="Solana Wallet Analyzer",
-    page_icon="📊",
-    layout="wide",
-    initial_sidebar_state="expanded",
+    page_title="Wallet Analyzer", page_icon="📊",
+    layout="wide", initial_sidebar_state="expanded"
 )
 
-# ─────────────────────────────────────────────
-# CUSTOM STYLING
-# ─────────────────────────────────────────────
+# ── CSS ───────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-    /* Dark theme overrides */
-    .stApp { background-color: #0e1117; }
-    .metric-card {
-        background: linear-gradient(135deg, #1a1f2e 0%, #151922 100%);
-        border: 1px solid #2d3548;
-        border-radius: 12px;
-        padding: 16px 20px;
-        text-align: center;
-    }
-    .metric-label {
-        color: #8b95a5;
-        font-size: 0.78rem;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-        margin-bottom: 4px;
-    }
-    .metric-value {
-        font-size: 1.5rem;
-        font-weight: 700;
-        color: #e2e8f0;
-    }
-    .metric-value.positive { color: #22c55e; }
-    .metric-value.negative { color: #ef4444; }
-    .first-buy-badge {
-        background: #22c55e22;
-        color: #22c55e;
-        padding: 2px 8px;
-        border-radius: 4px;
-        font-size: 0.75rem;
-        font-weight: 600;
-    }
-    div[data-testid="stDataFrame"] { font-size: 0.85rem; }
-    .accuracy-note {
-        background: #1e293b;
-        border-left: 3px solid #f59e0b;
-        padding: 12px 16px;
-        border-radius: 0 8px 8px 0;
-        font-size: 0.82rem;
-        color: #94a3b8;
-        margin-top: 16px;
-    }
+@import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap');
+html,body,[class*="css"]{font-family:'DM Sans',sans-serif;background:#0a0a0f;color:#e2e8f0}
+.stApp{background:#0a0a0f}
+section[data-testid="stSidebar"]{background:#0f0f1a;border-right:1px solid #1e1e30}
+[data-testid="metric-container"]{background:linear-gradient(135deg,#0f0f1a,#13131f);border:1px solid #1e1e30;border-radius:10px;padding:16px;transition:border-color .2s}
+[data-testid="metric-container"]:hover{border-color:#00ff88}
+[data-testid="stMetricLabel"]{color:#64748b!important;font-size:11px!important;text-transform:uppercase;letter-spacing:1px;font-family:'Space Mono',monospace!important}
+[data-testid="stMetricValue"]{color:#e2e8f0!important;font-family:'Space Mono',monospace!important;font-size:22px!important}
+[data-testid="stMetricDelta"]{font-family:'Space Mono',monospace!important}
+h1{font-family:'Space Mono',monospace!important;color:#00ff88!important;font-size:24px!important;letter-spacing:-1px}
+h2{font-family:'Space Mono',monospace!important;color:#e2e8f0!important;font-size:16px!important;border-bottom:1px solid #1e1e30;padding-bottom:8px}
+button[data-baseweb="tab"]{font-family:'Space Mono',monospace!important;font-size:12px!important;color:#64748b!important}
+button[data-baseweb="tab"][aria-selected="true"]{color:#00ff88!important;border-bottom-color:#00ff88!important}
+.stSelectbox>div>div,.stMultiSelect>div>div{background:#0f0f1a!important;border:1px solid #1e1e30!important;border-radius:6px!important}
+.stRadio>div{flex-direction:row;gap:8px}
+.stRadio>div>label{background:#0f0f1a;border:1px solid #1e1e30;border-radius:6px;padding:4px 14px;font-family:'Space Mono',monospace;font-size:12px;cursor:pointer}
+.wallet-badge{font-family:'Space Mono',monospace;font-size:11px;color:#64748b;background:#0f0f1a;border:1px solid #1e1e30;border-radius:20px;padding:4px 12px;display:inline-block}
+.section-header{font-family:'Space Mono',monospace;font-size:11px;color:#00ff88;text-transform:uppercase;letter-spacing:2px;padding:8px 0;border-bottom:1px solid #00ff8830;margin-bottom:16px}
+.stPlotlyChart{border:1px solid #1e1e30;border-radius:10px}
+.ht-wrap{overflow-y:auto;border:1px solid #1e1e30;border-radius:8px}
+.ht{width:100%;border-collapse:collapse;font-family:'Space Mono',monospace;font-size:12px}
+.ht thead tr th{padding:10px 12px;text-align:left;color:#64748b;font-size:10px;text-transform:uppercase;letter-spacing:1px;background:#0f0f1a;border-bottom:1px solid #1e1e30;position:sticky;top:0;white-space:nowrap}
+.ht tbody tr{border-bottom:1px solid #0f0f1a;transition:background .1s}
+.ht tbody tr:hover{background:#0f0f1a}
+.ht tbody tr td{padding:8px 12px;color:#cbd5e1;white-space:nowrap}
+.ht a{color:#00aaff;text-decoration:none;font-weight:700}
+.ht a:hover{color:#00ff88;text-decoration:underline}
+.profit{color:#00ff88!important}
+.loss{color:#ff4466!important}
+.neutral{color:#64748b!important}
+.badge-closed{background:#00ff8820;color:#00ff88;border-radius:4px;padding:2px 6px;font-size:10px}
+.badge-open{background:#ffd70020;color:#ffd700;border-radius:4px;padding:2px 6px;font-size:10px}
 </style>
 """, unsafe_allow_html=True)
 
-# ─────────────────────────────────────────────
-# DATA LOADING
-# ─────────────────────────────────────────────
-def download_from_drive(file_id, dest_path):
-    """Download a file from Google Drive via gdown."""
-    url = f"https://drive.google.com/uc?id={file_id}"
-    try:
-        gdown.download(url, dest_path, quiet=True)
-        return os.path.exists(dest_path)
-    except Exception as e:
-        st.error(f"Failed to download from Drive: {e}")
-        return False
+# ══════════════════════════════════════════════════════════════════
+# WALLET FILES — Google Drive configuration
+# ──────────────────────────────────────────────────────────────────
+# Add your wallets here. For each wallet:
+#   1. Upload the wallet_*.json to Google Drive
+#   2. Right-click → Share → "Anyone with the link" → Copy link
+#   3. Extract the file ID from the link:
+#      https://drive.google.com/file/d/FILE_ID_HERE/view
+#   4. Add an entry below: "Display Name": "FILE_ID_HERE"
+#
+# Example:
+#   "9d44pdMg (All time)": "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms",
+# ══════════════════════════════════════════════════════════════════
+DRIVE_WALLETS = {
+    # "Wallet Display Name": "Google Drive File ID",
+    "HighWR53": "1KAJGCp4B92xICgSHhHH_z84UL26Cj7CU",
+}
 
-@st.cache_data
-def load_data(filepath: str):
-    """Load and prepare wallet JSON into DataFrames."""
-    with open(filepath, "r") as f:
-        raw = json.load(f)
+# ── Download wallet files from Drive on startup ────────────────────
+import os
+try:
+    import gdown
+except ImportError:
+    os.system("pip install gdown -q")
+    import gdown
 
-    wallet_addr = raw.get("wallet", "unknown")
-    generated_at = raw.get("generated_at", "")
-    period = raw.get("period", "ALL")
+os.makedirs("wallet_data", exist_ok=True)
 
-    # --- Trades DataFrame ---
-    trades_raw = raw.get("trades", [])
-    if trades_raw:
-        df_trades = pd.DataFrame(trades_raw)
-    else:
-        df_trades = pd.DataFrame()
+wallet_labels = {}
+for display_name, file_id in DRIVE_WALLETS.items():
+    if file_id == "YOUR_DRIVE_FILE_ID_HERE":
+        continue
+    local_path = f"wallet_data/{display_name.replace(' ','_').replace('/','_')}.json"
+    if not os.path.exists(local_path):
+        with st.spinner(f"Downloading {display_name}..."):
+            try:
+                gdown.download(
+                    f"https://drive.google.com/uc?id={file_id}",
+                    local_path, quiet=True
+                )
+            except Exception as e:
+                st.warning(f"Could not download {display_name}: {e}")
+                continue
+    if os.path.exists(local_path):
+        try:
+            with open(local_path) as fh:
+                meta = json.load(fh)
+            addr = meta.get("wallet", "?")
+            gen  = meta.get("generated_at", "")[:10]
+            label = f"{display_name}  |  {addr[:8]}...{addr[-6:]}  |  {gen}"
+            wallet_labels[label] = local_path
+        except:
+            wallet_labels[display_name] = local_path
 
-    if not df_trades.empty:
-        # Numeric safety
-        num_cols = ["sol_amount", "usd_value", "token_amount", "sol_price",
-                    "mc_at_trade", "current_price", "current_mc"]
-        for c in num_cols:
-            if c in df_trades.columns:
-                df_trades[c] = pd.to_numeric(df_trades[c], errors="coerce").fillna(0)
+if not wallet_labels:
+    st.error(
+        "**No wallet files loaded.**\n\n"
+        "Add your Google Drive file IDs to the `DRIVE_WALLETS` dictionary "
+        "at the top of `wallet_dashboard.py`, then redeploy."
+    )
+    st.stop()
 
-        # Datetime safety — normalize to tz-naive UTC
-        if "datetime" in df_trades.columns:
-            df_trades["datetime"] = pd.to_datetime(
-                df_trades["datetime"], utc=True
-            ).dt.tz_convert(None)
-        elif "timestamp" in df_trades.columns:
-            df_trades["datetime"] = pd.to_datetime(
-                df_trades["timestamp"], unit="s", utc=True
-            ).dt.tz_convert(None)
-
-        # Ensure is_first_buy
-        if "is_first_buy" not in df_trades.columns:
-            df_trades["is_first_buy"] = False
-
-    # --- Positions DataFrame ---
-    positions_raw = raw.get("positions", [])
-    if positions_raw:
-        df_positions = pd.DataFrame(positions_raw)
-    else:
-        df_positions = pd.DataFrame()
-
-    if not df_positions.empty:
-        num_cols_pos = ["sol_in", "sol_out", "buy_usd", "sell_usd",
-                        "pnl_sol", "pnl_usd", "remaining_tokens",
-                        "current_price", "current_value", "unrealized_usd",
-                        "mc_at_buy", "current_mc", "roi",
-                        "tokens_bought", "tokens_sold"]
-        for c in num_cols_pos:
-            if c in df_positions.columns:
-                df_positions[c] = pd.to_numeric(df_positions[c], errors="coerce").fillna(0)
-
-        for dtcol in ["first_buy_dt", "last_sell_dt"]:
-            if dtcol in df_positions.columns:
-                df_positions[dtcol] = pd.to_datetime(
-                    df_positions[dtcol], utc=True, errors="coerce"
-                ).dt.tz_convert(None)
-
-        # Compute days_held live
-        now_ts = pd.Timestamp.utcnow().tz_localize(None)
-        df_positions["days_held"] = df_positions.apply(
-            lambda r: max(0, (
-                (r["last_sell_dt"] - r["first_buy_dt"]).days
-                if pd.notna(r.get("last_sell_dt")) and pd.notna(r.get("first_buy_dt"))
-                else (now_ts - r["first_buy_dt"]).days
-                if pd.notna(r.get("first_buy_dt"))
-                else 0
-            )), axis=1
-        )
-
-        # MC bucket ordering
-        if "mc_bucket" in df_positions.columns:
-            df_positions["mc_bucket"] = pd.Categorical(
-                df_positions["mc_bucket"],
-                categories=MC_BUCKET_ORDER,
-                ordered=True,
-            )
-
-    summary = raw.get("summary", {})
-
-    return {
-        "wallet": wallet_addr,
-        "generated_at": generated_at,
-        "period": period,
-        "trades": df_trades,
-        "positions": df_positions,
-        "summary": summary,
-    }
-
-# ─────────────────────────────────────────────
-# HELPER FUNCTIONS
-# ─────────────────────────────────────────────
-def fmt_val(v, use_usd=True, prefix=True):
-    """Format a value as USD or SOL with sign."""
-    if pd.isna(v) or v == 0:
-        return "$0" if use_usd else "0 SOL"
-    sign = "+" if v > 0 else ""
-    if use_usd:
-        if abs(v) >= 1_000_000:
-            return f"{sign}${v / 1_000_000:,.2f}M"
-        if abs(v) >= 1_000:
-            return f"{sign}${v:,.0f}"
-        return f"{sign}${v:,.2f}"
-    else:
-        return f"{sign}{v:,.2f} SOL"
-
-def color_class(v):
-    if v > 0:
-        return "positive"
-    if v < 0:
-        return "negative"
-    return ""
-
-def metric_card(label, value, is_numeric=True, val_class=""):
-    """Render a styled metric card."""
-    return f"""
-    <div class="metric-card">
-        <div class="metric-label">{label}</div>
-        <div class="metric-value {val_class}">{value}</div>
-    </div>
-    """
-
-def filter_by_period(df, period_key, custom_range=None):
-    """Filter DataFrame by time period."""
-    if "datetime" not in df.columns or df.empty:
-        return df
-    now = pd.Timestamp.utcnow().tz_localize(None)
-    mapping = {
-        "1D": timedelta(days=1),
-        "7D": timedelta(days=7),
-        "1M": timedelta(days=30),
-        "1Y": timedelta(days=365),
-    }
-    if period_key == "Custom" and custom_range:
-        start = pd.Timestamp(custom_range[0])
-        end = pd.Timestamp(custom_range[1]) + timedelta(days=1)
-        return df[(df["datetime"] >= start) & (df["datetime"] < end)]
-    if period_key == "All":
-        return df
-    delta = mapping.get(period_key)
-    if delta:
-        cutoff = now - delta
-        return df[df["datetime"] >= cutoff]
-    return df
-
-def gmgn_link(mint, symbol):
-    """Create a GMGN.ai link for a token."""
-    url = f"https://gmgn.ai/sol/token/{mint}"
-    return f"[{symbol}]({url})"
-
-# ─────────────────────────────────────────────
-# SIDEBAR
-# ─────────────────────────────────────────────
-with st.sidebar:
-    st.title("📊 Wallet Analyzer")
-    st.caption("Solana Trade Dashboard")
-
-    # Wallet selector
-    wallet_names = list(DRIVE_WALLETS.keys())
-    if not wallet_names:
-        st.error("No wallets configured. Add entries to DRIVE_WALLETS.")
-        st.stop()
-
-    selected_name = st.selectbox("Wallet", wallet_names)
-    file_id = DRIVE_WALLETS[selected_name]
-
-    # Refresh button
-    if st.button("🔄 Refresh Data from Drive"):
-        if os.path.exists(CACHE_DIR):
-            shutil.rmtree(CACHE_DIR)
+# ── Wallet refresh button ──────────────────────────────────────────
+col_sel, col_ref = st.columns([5, 1])
+with col_sel:
+    selected_label = st.selectbox("🔑 Wallet", list(wallet_labels.keys()),
+                                  key="wallet_selector")
+with col_ref:
+    st.markdown("<br>", unsafe_allow_html=True)
+    if st.button("🔄 Refresh", help="Re-download latest data from Drive"):
+        # Delete cached files so they re-download
+        for path in wallet_labels.values():
+            if os.path.exists(path):
+                os.remove(path)
         st.cache_data.clear()
         st.rerun()
 
-    # USD / SOL toggle
-    currency = st.radio("Currency", ["USD", "SOL"], horizontal=True)
-    USE_USD = currency == "USD"
+selected_file = wallet_labels[selected_label]
 
-    st.divider()
-    st.markdown("""
-    <div class="accuracy-note">
-        <strong>⚠️ Accuracy Notes</strong><br>
-        • MC at buy uses current supply (understated for tokens that burned supply)<br>
-        • USD values use daily SOL close (~1-3% error)<br>
-        • Dead tokens show $0 unrealised<br>
-        • Token-to-token swaps not via SOL/stablecoins are missing<br>
-        • Cross-check high-value positions on GMGN/Solscan
-    </div>
-    """, unsafe_allow_html=True)
+# ══════════════════════════════════════════════════════════════════
+# DATA LOADING
+# ══════════════════════════════════════════════════════════════════
+@st.cache_data
+def load_data(filepath: str):
+    with open(filepath) as f:
+        raw = json.load(f)
 
-# ─────────────────────────────────────────────
-# LOAD DATA
-# ─────────────────────────────────────────────
-os.makedirs(CACHE_DIR, exist_ok=True)
-cache_path = os.path.join(CACHE_DIR, f"{selected_name.replace(' ', '_')}.json")
+    # ── Positions ────────────────────────────────────────────────
+    pos_df = pd.DataFrame(raw["positions"])
 
-if not os.path.exists(cache_path):
-    with st.spinner("Downloading wallet data from Google Drive..."):
-        success = download_from_drive(file_id, cache_path)
-        if not success:
-            st.error("Could not download wallet data. Check Drive file ID and sharing settings.")
-            st.stop()
+    NUM_POS = [
+        "pnl_usd","pnl_sol","buy_usd","sell_usd","sol_in","sol_out",
+        "num_buys","num_sells","remaining_tokens","unrealized_pnl_usd",
+        "current_price_usd","mc_at_first_buy","total_supply",
+    ]
+    for c in NUM_POS:
+        if c in pos_df.columns:
+            pos_df[c] = pd.to_numeric(pos_df[c], errors="coerce")
 
-data = load_data(cache_path)
-df_trades = data["trades"]
-df_positions = data["positions"]
-wallet_addr = data["wallet"]
+    def to_naive(series):
+        parsed = pd.to_datetime(series, errors="coerce", utc=True)
+        return parsed.dt.tz_convert(None)
 
-st.sidebar.caption(f"Wallet: `{wallet_addr[:8]}...{wallet_addr[-4:]}`")
-st.sidebar.caption(f"Data generated: {data['generated_at'][:19]}")
+    pos_df["first_buy_dt"] = to_naive(pos_df["first_buy"])
+    pos_df["last_sell_dt"] = to_naive(pos_df["last_sell"])
 
-# ─────────────────────────────────────────────
-# FILTER NON-DUST TRADES
-# ─────────────────────────────────────────────
-if not df_trades.empty:
-    df_trades_clean = df_trades[
-        (df_trades["usd_value"] >= DUST_USD) | (df_trades["sol_amount"] >= DUST_SOL)
-    ].copy()
+    def clean_name(r):
+        n = str(r.get("token_name") or "").strip()
+        return n if n and n.lower() not in ["unknown","none","nan",""] else r["mint"][:14] + "..."
+    def clean_sym(r):
+        s = str(r.get("token_symbol") or "").strip()
+        return s if s and s.lower() not in ["unknown","none","nan","???",""] else r["mint"][:8]
+
+    pos_df["display_name"]   = pos_df.apply(clean_name, axis=1)
+    pos_df["display_symbol"] = pos_df.apply(clean_sym,  axis=1)
+    pos_df["roi_pct"]        = (pos_df["pnl_usd"] / pos_df["buy_usd"].where(pos_df["buy_usd"] > 0) * 100).round(1)
+    pos_df["roi_sol_pct"]    = (pos_df["pnl_sol"] / pos_df["sol_in"].where(pos_df["sol_in"]   > 0) * 100).round(1)
+
+    def best_bucket(r):
+        b = r.get("mc_bucket_at_buy")
+        if b and b not in ("Unknown", None, ""): return b
+        return r.get("mc_bucket") or "Unknown"
+    pos_df["mc_bucket_display"] = pos_df.apply(best_bucket, axis=1)
+
+    def fmt_mc_val(val):
+        try:
+            v = float(val)
+            if v <= 0: return "Unknown"
+            if v >= 1_000_000: return f"${v/1_000_000:.1f}M"
+            if v >= 1_000:     return f"${v/1_000:.0f}K"
+            return f"${v:.0f}"
+        except:
+            return "Unknown"
+    pos_df["mc_value_display"] = pos_df["mc_at_first_buy"].apply(fmt_mc_val)
+
+    # ── Trades ───────────────────────────────────────────────────
+    trd_df = pd.DataFrame(raw["trades"])
+    NUM_TRD = ["sol_amount","usd_value","token_amount","sol_price","hour_utc"]
+    for c in NUM_TRD:
+        if c in trd_df.columns:
+            trd_df[c] = pd.to_numeric(trd_df[c], errors="coerce")
+
+    trd_df["datetime_utc"] = to_naive(trd_df["datetime_utc"])
+    trd_df["date"]         = to_naive(trd_df["date"])
+    trd_df["hour_utc"]     = trd_df["hour_utc"].fillna(0).astype(int)
+
+    # ── Lookups ───────────────────────────────────────────────────
+    supply_lookup = {}
+    for p in raw["positions"]:
+        ts = p.get("total_supply")
+        if ts:
+            try:
+                v = float(ts)
+                if v > 0: supply_lookup[p["mint"]] = v
+            except: pass
+
+    mint_lookup = pos_df.set_index("mint")[[
+        "display_name","display_symbol","mc_bucket_display",
+        "pnl_usd","pnl_sol","roi_pct","roi_sol_pct","buy_usd","sol_in",
+        "status","remaining_tokens","current_price_usd","unrealized_pnl_usd",
+    ]].to_dict("index")
+
+    wallet_addr = raw.get("wallet", "Unknown")
+    return pos_df, trd_df, mint_lookup, supply_lookup, wallet_addr
+
+pos_df, trd_df, mint_lookup, supply_lookup, WALLET = load_data(selected_file)
+
+# ══════════════════════════════════════════════════════════════════
+# RENDER HELPERS
+# ══════════════════════════════════════════════════════════════════
+def html_table(df, height=520):
+    hdrs = "".join(f"<th>{c}</th>" for c in df.columns)
+    rows = "".join(
+        "<tr>" + "".join(f"<td>{v}</td>" for v in r) + "</tr>"
+        for _, r in df.iterrows()
+    )
+    return (f'<div class="ht-wrap" style="max-height:{height}px">'
+            f'<table class="ht"><thead><tr>{hdrs}</tr></thead>'
+            f'<tbody>{rows}</tbody></table></div>')
+
+def _is_null(v):
+    if v is None: return True
+    try: return pd.isna(v)
+    except: return False
+
+def fmt_pnl_usd(v):
+    if _is_null(v): return '<span class="neutral">N/A</span>'
+    cls = "profit" if float(v) >= 0 else "loss"
+    return f'<span class="{cls}">${float(v):+,.2f}</span>'
+
+def fmt_pnl_sol(v):
+    if _is_null(v): return '<span class="neutral">N/A</span>'
+    cls = "profit" if float(v) >= 0 else "loss"
+    return f'<span class="{cls}">{float(v):+.4f} SOL</span>'
+
+def fmt_roi(v):
+    if _is_null(v): return '<span class="neutral">N/A</span>'
+    cls = "profit" if float(v) >= 0 else "loss"
+    return f'<span class="{cls}">{float(v):+.1f}%</span>'
+
+def fmt_mc_trade(mint, sol_amount, token_amount, sol_price):
+    try:
+        if not (sol_amount and token_amount and sol_price): return "Unknown"
+        s = float(sol_amount); t = float(token_amount); p = float(sol_price)
+        if t <= 0: return "Unknown"
+        supply = supply_lookup.get(mint)
+        if not supply: return "Unknown"
+        mc = (s / t) * p * supply
+        if mc >= 1_000_000: return f"${mc/1_000_000:.1f}M"
+        if mc >= 1_000:     return f"${mc/1_000:.0f}K"
+        return f"${mc:.0f}"
+    except: return "Unknown"
+
+def ticker_link(mint, sym):
+    return f'<a href="https://gmgn.ai/sol/token/{mint}" target="_blank">{sym}</a>'
+
+CHART = dict(
+    paper_bgcolor="#0a0a0f", plot_bgcolor="#0a0a0f",
+    font=dict(family="Space Mono", color="#64748b", size=11),
+    margin=dict(l=0, r=0, t=30, b=0),
+)
+
+# ══════════════════════════════════════════════════════════════════
+# SIDEBAR
+# ══════════════════════════════════════════════════════════════════
+with st.sidebar:
+    st.markdown("# 📊 Wallet Analyzer")
+    st.markdown(f'<div class="wallet-badge">{WALLET[:8]}...{WALLET[-6:]}</div>', unsafe_allow_html=True)
+    st.markdown("---")
+    st.markdown('<div class="section-header">Global Filters</div>', unsafe_allow_html=True)
+
+    min_d = trd_df["datetime_utc"].min().date()
+    max_d = trd_df["datetime_utc"].max().date()
+    date_from = st.date_input("From", value=min_d, min_value=min_d, max_value=max_d)
+    date_to   = st.date_input("To",   value=max_d, min_value=min_d, max_value=max_d)
+    st.markdown("---")
+
+    mc_order  = ["<4K","4K-9K","10K-19K","20K-29K","30K-99K","100K-999K","1M+","Unknown"]
+    mc_avail  = [m for m in mc_order if m in pos_df["mc_bucket_display"].values]
+    mc_filter = st.multiselect("MC at Trade", mc_avail, default=mc_avail)
+    status_filter = st.multiselect("Position Status",
+        ["CLOSED","OPEN BUY","OPEN SELL"], default=["CLOSED","OPEN BUY","OPEN SELL"])
+    dex_opts   = sorted(trd_df["dex"].dropna().unique())
+    dex_filter = st.multiselect("DEX", dex_opts, default=list(dex_opts))
+    day_filter = st.multiselect("Day of Week",
+        ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"],
+        default=["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"])
+    hour_range = st.slider("Hour UTC", 0, 23, (0, 23))
+
+# ══════════════════════════════════════════════════════════════════
+# HEADER + USD/SOL TOGGLE
+# ══════════════════════════════════════════════════════════════════
+h1c, h2c = st.columns([3, 1])
+with h1c:
+    st.markdown("# Wallet Performance Analyzer")
+    st.markdown(f'<span class="wallet-badge">{WALLET}</span>', unsafe_allow_html=True)
+with h2c:
+    st.markdown("<br>", unsafe_allow_html=True)
+    currency = st.radio("", ["USD 💵", "SOL ◎"], horizontal=True, label_visibility="collapsed")
+    st.markdown(f'<p style="font-family:Space Mono,monospace;font-size:10px;color:#64748b;text-align:right">{date_from} → {date_to}</p>', unsafe_allow_html=True)
+
+USE_USD = (currency == "USD 💵")
+st.markdown("<br>", unsafe_allow_html=True)
+
+# ══════════════════════════════════════════════════════════════════
+# FILTERS
+# ══════════════════════════════════════════════════════════════════
+def filt_pos(df):
+    m = pd.Series(True, index=df.index)
+    if status_filter: m &= df["status"].isin(status_filter)
+    if mc_filter:     m &= df["mc_bucket_display"].isin(mc_filter)
+    m &= df["first_buy_dt"].isna() | (df["first_buy_dt"].dt.date >= date_from)
+    m &= df["first_buy_dt"].isna() | (df["first_buy_dt"].dt.date <= date_to)
+    return df[m]
+
+def filt_trd(df):
+    m = (df["datetime_utc"].dt.date >= date_from) & (df["datetime_utc"].dt.date <= date_to)
+    if dex_filter:  m &= df["dex"].isin(dex_filter)
+    if day_filter:  m &= df["day_of_week"].isin(day_filter)
+    m &= (df["hour_utc"] >= hour_range[0]) & (df["hour_utc"] <= hour_range[1])
+    return df[m]
+
+fpos = filt_pos(pos_df)
+ftrd = filt_trd(trd_df)
+
+closed_pos = fpos[fpos["status"] == "CLOSED"]
+open_pos   = fpos[fpos["status"] == "OPEN BUY"]
+wins       = closed_pos[closed_pos["pnl_sol"] > 0]
+losses_c   = closed_pos[closed_pos["pnl_sol"] <= 0]
+win_rate   = len(wins) / len(closed_pos) * 100 if len(closed_pos) else 0
+
+# ── KPIs ──────────────────────────────────────────────────────────
+if USE_USD:
+    kpi_total  = f"${fpos['pnl_usd'].sum():,.0f}"
+    kpi_real   = f"${closed_pos['pnl_usd'].sum():,.0f}"
+    kpi_unreal = f"${open_pos['unrealized_pnl_usd'].sum():,.0f}"
+    kpi_invest = f"${fpos['buy_usd'].sum():,.0f}"
 else:
-    df_trades_clean = df_trades.copy()
+    kpi_total  = f"{fpos['pnl_sol'].sum():,.2f} SOL"
+    kpi_real   = f"{closed_pos['pnl_sol'].sum():,.2f} SOL"
+    kpi_unreal = f"{open_pos['unrealized_pnl_usd'].sum():,.2f} SOL"
+    kpi_invest = f"{fpos['sol_in'].sum():,.2f} SOL"
 
-# ─────────────────────────────────────────────
-# TABS
-# ─────────────────────────────────────────────
-tab_pnl, tab_history, tab_positions, tab_time, tab_mc, tab_open = st.tabs([
-    "📈 P&L Overview", "📋 Trade History", "💼 Positions",
-    "🕐 Time Analysis", "🎯 MC Analysis", "🔓 Open Positions",
+k1,k2,k3,k4,k5,k6 = st.columns(6)
+k1.metric("Total P&L",        kpi_total)
+k2.metric("Realised P&L",     kpi_real)
+k3.metric("Unrealised P&L",   kpi_unreal)
+k4.metric("Win Rate",         f"{win_rate:.1f}%")
+k5.metric("Closed Positions", f"{len(closed_pos):,}", delta=f"W:{len(wins)} L:{len(losses_c)}")
+k6.metric("Total Invested",   kpi_invest)
+st.markdown("<br>", unsafe_allow_html=True)
+
+tab1,tab2,tab3,tab4,tab5,tab6 = st.tabs([
+    "📈 P&L Overview","📋 Trade History","🪙 Positions",
+    "📅 Time Analysis","📊 MC Analysis","💼 Open Positions",
 ])
 
-# ═════════════════════════════════════════════
-# TAB 1: P&L OVERVIEW
-# ═════════════════════════════════════════════
-with tab_pnl:
-    if df_trades_clean.empty:
-        st.info("No trades found.")
+# ════════════════════════════════════════════════════════════════
+# TAB 1 — P&L Overview
+# ════════════════════════════════════════════════════════════════
+with tab1:
+    pnl_col = "pnl_usd" if USE_USD else "pnl_sol"
+    pfx     = "$"       if USE_USD else ""
+    sfx     = ""        if USE_USD else " SOL"
+
+    if "pnl_period" not in st.session_state:
+        st.session_state["pnl_period"] = "All"
+
+    bp1,bp2,bp3,bp4,bp5,bp6,_ = st.columns([1,1,1,1,1,1,5])
+    if bp1.button("1D",     use_container_width=True): st.session_state["pnl_period"] = "1D"
+    if bp2.button("7D",     use_container_width=True): st.session_state["pnl_period"] = "7D"
+    if bp3.button("1M",     use_container_width=True): st.session_state["pnl_period"] = "1M"
+    if bp4.button("1Y",     use_container_width=True): st.session_state["pnl_period"] = "1Y"
+    if bp5.button("All",    use_container_width=True): st.session_state["pnl_period"] = "All"
+    if bp6.button("Custom", use_container_width=True): st.session_state["pnl_period"] = "Custom"
+
+    period   = st.session_state["pnl_period"]
+    today_ts = pd.Timestamp.utcnow().normalize().tz_localize(None)
+
+    if   period == "1D":     p_from = today_ts - timedelta(days=1)
+    elif period == "7D":     p_from = today_ts - timedelta(days=7)
+    elif period == "1M":     p_from = today_ts - timedelta(days=30)
+    elif period == "1Y":     p_from = today_ts - timedelta(days=365)
+    elif period == "Custom":
+        cc1,cc2 = st.columns(2)
+        with cc1: p_from = pd.Timestamp(st.date_input("From", value=(today_ts-timedelta(days=90)).date(), key="cf"))
+        with cc2: p_to   = pd.Timestamp(st.date_input("To",   value=today_ts.date(), key="ct"))
     else:
-        # Period filter
-        period_cols = st.columns([1, 1, 1, 1, 1, 2])
-        period_options = ["1D", "7D", "1M", "1Y", "All", "Custom"]
-        period_key = "All"
-        for i, opt in enumerate(period_options[:5]):
-            if period_cols[i].button(opt, key=f"pnl_period_{opt}", use_container_width=True):
-                st.session_state["pnl_period"] = opt
-        custom_range = None
-        with period_cols[5]:
-            if st.button("Custom", key="pnl_period_custom", use_container_width=True):
-                st.session_state["pnl_period"] = "Custom"
-        period_key = st.session_state.get("pnl_period", "All")
+        p_from = pd.Timestamp("2000-01-01")
 
-        if period_key == "Custom":
-            dr = st.date_input("Date range", value=[], key="pnl_custom_range")
-            if len(dr) == 2:
-                custom_range = dr
-            else:
-                st.caption("Select start and end dates.")
+    p_to = today_ts + timedelta(days=1) if period != "Custom" else p_to
 
-        filtered = filter_by_period(df_trades_clean, period_key, custom_range)
+    st.markdown(f'<p style="font-family:Space Mono,monospace;font-size:10px;color:#00ff88;margin:4px 0 14px">Period: <b>{period}</b> &nbsp;|&nbsp; {p_from.date()} → {p_to.date()}</p>', unsafe_allow_html=True)
 
-        if filtered.empty:
-            st.info("No trades in selected period.")
-        else:
-            val_col = "usd_value" if USE_USD else "sol_amount"
+    cl, cr = st.columns([2, 1])
 
-            # Compute signed PnL per trade
-            filtered = filtered.copy()
-            filtered["signed_pnl"] = filtered.apply(
-                lambda r: r[val_col] if r["action"] == "SELL" else -r[val_col], axis=1
-            )
-            filtered["cum_pnl"] = filtered["signed_pnl"].cumsum()
+    with cl:
+        st.markdown("## Cumulative P&L Over Time")
+        cp_all = closed_pos.dropna(subset=["last_sell_dt", pnl_col]).sort_values("last_sell_dt").copy()
+        cp_all["cum"] = cp_all[pnl_col].cumsum()
+        cp = cp_all[(cp_all["last_sell_dt"] >= p_from) & (cp_all["last_sell_dt"] <= p_to)]
 
-            # KPI metrics
-            total_pnl = filtered["signed_pnl"].sum()
-            num_trades = len(filtered)
-            buys = filtered[filtered["action"] == "BUY"]
-            sells = filtered[filtered["action"] == "SELL"]
-            total_bought = buys[val_col].sum()
-            total_sold = sells[val_col].sum()
-
-            mc1, mc2, mc3, mc4 = st.columns(4)
-            mc1.markdown(metric_card("Total P&L", fmt_val(total_pnl, USE_USD),
-                                      val_class=color_class(total_pnl)), unsafe_allow_html=True)
-            mc2.markdown(metric_card("Trades", str(num_trades)), unsafe_allow_html=True)
-            mc3.markdown(metric_card("Total Bought", fmt_val(total_bought, USE_USD)),
-                         unsafe_allow_html=True)
-            mc4.markdown(metric_card("Total Sold", fmt_val(total_sold, USE_USD)),
-                         unsafe_allow_html=True)
-
-            # Cumulative P&L chart
-            st.subheader("Cumulative P&L")
-            fig_cum = go.Figure()
-            fig_cum.add_trace(go.Scatter(
-                x=filtered["datetime"],
-                y=filtered["cum_pnl"],
-                mode="lines",
-                fill="tozeroy",
-                line=dict(color="#22c55e" if total_pnl >= 0 else "#ef4444", width=2),
-                fillcolor="rgba(34,197,94,0.1)" if total_pnl >= 0 else "rgba(239,68,68,0.1)",
+        if not cp.empty:
+            fig = go.Figure(go.Scatter(
+                x=cp["last_sell_dt"], y=cp["cum"], mode="lines",
+                line=dict(color="#00ff88", width=2),
+                fill="tozeroy", fillcolor="rgba(0,255,136,0.07)",
+                hovertemplate=f"<b>%{{x|%Y-%m-%d}}</b><br>{pfx}%{{y:,.2f}}{sfx}<extra></extra>",
             ))
-            fig_cum.update_layout(
-                template="plotly_dark",
-                paper_bgcolor="#0e1117",
-                plot_bgcolor="#0e1117",
-                xaxis_title="",
-                yaxis_title="USD" if USE_USD else "SOL",
-                height=350,
-                margin=dict(l=40, r=20, t=20, b=40),
-            )
-            st.plotly_chart(fig_cum, use_container_width=True)
-
-            # Monthly P&L bar chart
-            st.subheader("Monthly P&L")
-            monthly = filtered.copy()
-            monthly["month"] = monthly["datetime"].dt.to_period("M").astype(str)
-            monthly_pnl = monthly.groupby("month")["signed_pnl"].sum().reset_index()
-            monthly_pnl.columns = ["Month", "PnL"]
-            monthly_pnl["color"] = monthly_pnl["PnL"].apply(
-                lambda x: "#22c55e" if x >= 0 else "#ef4444"
-            )
-            fig_monthly = go.Figure(go.Bar(
-                x=monthly_pnl["Month"],
-                y=monthly_pnl["PnL"],
-                marker_color=monthly_pnl["color"],
-            ))
-            fig_monthly.update_layout(
-                template="plotly_dark",
-                paper_bgcolor="#0e1117",
-                plot_bgcolor="#0e1117",
-                yaxis_title="USD" if USE_USD else "SOL",
-                height=300,
-                margin=dict(l=40, r=20, t=20, b=40),
-            )
-            st.plotly_chart(fig_monthly, use_container_width=True)
-
-            # Yearly breakdown
-            yearly = filtered.copy()
-            yearly["year"] = yearly["datetime"].dt.year
-            year_groups = yearly.groupby("year")
-            st.subheader("Yearly Breakdown")
-            year_cols = st.columns(min(len(year_groups), 5))
-            for i, (year, grp) in enumerate(year_groups):
-                if i >= 5:
-                    break
-                yr_pnl = grp["signed_pnl"].sum()
-                yr_trades = len(grp)
-                year_cols[i].markdown(
-                    metric_card(str(year), fmt_val(yr_pnl, USE_USD),
-                                val_class=color_class(yr_pnl)),
-                    unsafe_allow_html=True,
-                )
-
-# ═════════════════════════════════════════════
-# TAB 2: TRADE HISTORY
-# ═════════════════════════════════════════════
-with tab_history:
-    if df_trades_clean.empty:
-        st.info("No trades found.")
-    else:
-        fcol1, fcol2, fcol3 = st.columns([2, 2, 2])
-
-        with fcol1:
-            trade_filter = st.selectbox("Filter", [
-                "All", "Buys Only", "Sells Only", "Unique Buys Only"
-            ], key="hist_filter")
-
-        with fcol2:
-            sort_by = st.selectbox("Sort by", [
-                "Time", "Amount", "ROI", "P&L"
-            ], key="hist_sort")
-
-        with fcol3:
-            sort_dir = st.radio("Direction", ["↓ Desc", "↑ Asc"],
-                                horizontal=True, key="hist_dir")
-        ascending = sort_dir.startswith("↑")
-
-        df_hist = df_trades_clean.copy()
-        val_col = "usd_value" if USE_USD else "sol_amount"
-
-        # Filter
-        if trade_filter == "Buys Only":
-            df_hist = df_hist[df_hist["action"] == "BUY"]
-        elif trade_filter == "Sells Only":
-            df_hist = df_hist[df_hist["action"] == "SELL"]
-        elif trade_filter == "Unique Buys Only":
-            df_hist = df_hist[df_hist["is_first_buy"] == True]
-
-        # Compute display columns
-        df_hist["Amount"] = df_hist[val_col].apply(lambda x: fmt_val(x, USE_USD, prefix=False))
-
-        # Realised P&L (for sells: the usd_value; for buys: negative)
-        df_hist["signed_pnl"] = df_hist.apply(
-            lambda r: r[val_col] if r["action"] == "SELL" else -r[val_col], axis=1
-        )
-        df_hist["Realised P&L"] = df_hist["signed_pnl"].apply(lambda x: fmt_val(x, USE_USD))
-
-        # Sort mapping
-        sort_col_map = {
-            "Time": "datetime",
-            "Amount": val_col,
-            "ROI": val_col,  # approximate; real ROI needs position context
-            "P&L": "signed_pnl",
-        }
-        sc = sort_col_map.get(sort_by, "datetime")
-        df_hist = df_hist.sort_values(sc, ascending=ascending)
-
-        # Build display table
-        display_cols = {
-            "datetime": "Time",
-            "action": "Action",
-            "token_symbol": "Ticker",
-            "mc_at_trade": "MC at Trade",
-            "Amount": "Amount",
-            "Realised P&L": "Realised P&L",
-            "is_first_buy": "1st Buy",
-            "method": "Method",
-        }
-        avail = [c for c in display_cols.keys() if c in df_hist.columns]
-        df_show = df_hist[avail].copy()
-        df_show = df_show.rename(columns=display_cols)
-
-        if "MC at Trade" in df_show.columns:
-            df_show["MC at Trade"] = df_show["MC at Trade"].apply(
-                lambda x: f"${x:,.0f}" if x > 0 else "—"
-            )
-        if "Time" in df_show.columns:
-            df_show["Time"] = df_show["Time"].dt.strftime("%Y-%m-%d %H:%M")
-        if "1st Buy" in df_show.columns:
-            df_show["1st Buy"] = df_show["1st Buy"].apply(lambda x: "✅" if x else "")
-
-        st.dataframe(df_show, use_container_width=True, height=600, hide_index=True)
-        st.caption(f"Showing {len(df_show)} trades (dust < ${DUST_USD} / {DUST_SOL} SOL hidden)")
-
-# ═════════════════════════════════════════════
-# TAB 3: POSITIONS
-# ═════════════════════════════════════════════
-with tab_positions:
-    if df_positions.empty:
-        st.info("No positions found.")
-    else:
-        pcol1, pcol2 = st.columns([3, 2])
-        with pcol1:
-            pos_sort = st.selectbox("Sort by", [
-                "P&L", "ROI", "Buy Amount"
-            ], key="pos_sort")
-        with pcol2:
-            pos_dir = st.radio("Direction", ["↓ Desc", "↑ Asc"],
-                               horizontal=True, key="pos_dir")
-        pos_asc = pos_dir.startswith("↑")
-
-        df_pos = df_positions.copy()
-        pnl_col = "pnl_usd" if USE_USD else "pnl_sol"
-        buy_col = "buy_usd" if USE_USD else "sol_in"
-        sell_col = "sell_usd" if USE_USD else "sol_out"
-
-        sort_map = {
-            "P&L": pnl_col,
-            "ROI": "roi",
-            "Buy Amount": buy_col,
-        }
-        df_pos = df_pos.sort_values(sort_map[pos_sort], ascending=pos_asc)
-
-        # Build display
-        df_pshow = pd.DataFrame()
-        df_pshow["Name"] = df_pos["token_name"]
-        df_pshow["Ticker"] = df_pos["token_symbol"]
-        df_pshow["Status"] = df_pos["status"]
-        df_pshow["MC at Buy"] = df_pos["mc_at_buy"].apply(
-            lambda x: f"${x:,.0f}" if x > 0 else "—"
-        )
-        df_pshow["MC Bucket"] = df_pos["mc_bucket"].astype(str)
-        df_pshow["Buys"] = df_pos["num_buys"]
-        df_pshow["Sells"] = df_pos["num_sells"]
-        df_pshow["Balance"] = df_pos["remaining_tokens"].apply(
-            lambda x: f"{x:,.0f}" if x > 0 else "0"
-        )
-        df_pshow["Buy Amt"] = df_pos[buy_col].apply(lambda x: fmt_val(x, USE_USD))
-        df_pshow["Sell Amt"] = df_pos[sell_col].apply(lambda x: fmt_val(x, USE_USD))
-        df_pshow["P&L"] = df_pos[pnl_col].apply(lambda x: fmt_val(x, USE_USD))
-        df_pshow["ROI"] = df_pos["roi"].apply(lambda x: f"{x:+,.1f}%")
-        df_pshow["Days"] = df_pos["days_held"]
-        df_pshow["First Buy"] = df_pos["first_buy_dt"].apply(
-            lambda x: x.strftime("%Y-%m-%d") if pd.notna(x) else "—"
-        )
-
-        st.dataframe(df_pshow, use_container_width=True, height=600, hide_index=True)
-        st.caption(f"Showing {len(df_pshow)} positions")
-
-# ═════════════════════════════════════════════
-# TAB 4: TIME ANALYSIS
-# ═════════════════════════════════════════════
-with tab_time:
-    if df_trades_clean.empty:
-        st.info("No trades found.")
-    else:
-        df_time = df_trades_clean.copy()
-        val_col = "usd_value" if USE_USD else "sol_amount"
-        df_time["signed_pnl"] = df_time.apply(
-            lambda r: r[val_col] if r["action"] == "SELL" else -r[val_col], axis=1
-        )
-        df_time["dow"] = df_time["datetime"].dt.day_name()
-        df_time["hour"] = df_time["datetime"].dt.hour
-
-        # Day of Week P&L
-        st.subheader("P&L by Day of Week")
-        dow_order = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-        dow_pnl = df_time.groupby("dow").agg(
-            pnl=("signed_pnl", "sum"),
-            trades=("signed_pnl", "count"),
-            wins=("signed_pnl", lambda x: (x > 0).sum()),
-        ).reindex(dow_order).fillna(0)
-        dow_pnl["win_rate"] = (dow_pnl["wins"] / dow_pnl["trades"] * 100).fillna(0)
-        dow_pnl = dow_pnl.reset_index()
-
-        fig_dow = go.Figure(go.Bar(
-            x=dow_pnl["dow"],
-            y=dow_pnl["pnl"],
-            marker_color=dow_pnl["pnl"].apply(
-                lambda x: "#22c55e" if x >= 0 else "#ef4444"
-            ),
-            text=dow_pnl["win_rate"].apply(lambda x: f"{x:.0f}% WR"),
-            textposition="outside",
-        ))
-        fig_dow.update_layout(
-            template="plotly_dark",
-            paper_bgcolor="#0e1117",
-            plot_bgcolor="#0e1117",
-            yaxis_title="USD" if USE_USD else "SOL",
-            height=300,
-            margin=dict(l=40, r=20, t=20, b=40),
-        )
-        st.plotly_chart(fig_dow, use_container_width=True)
-
-        # Hour × Day Heatmap
-        st.subheader("Trade Count: Hour × Day")
-        heatmap_data = df_time.groupby(["dow", "hour"]).size().reset_index(name="count")
-        pivot = heatmap_data.pivot(index="dow", columns="hour", values="count").fillna(0)
-        # Reindex to proper day order
-        pivot = pivot.reindex(dow_order).fillna(0)
-
-        fig_heat = go.Figure(go.Heatmap(
-            z=pivot.values,
-            x=[f"{h:02d}" for h in pivot.columns],
-            y=pivot.index,
-            colorscale="Viridis",
-            showscale=True,
-        ))
-        fig_heat.update_layout(
-            template="plotly_dark",
-            paper_bgcolor="#0e1117",
-            plot_bgcolor="#0e1117",
-            height=280,
-            margin=dict(l=80, r=20, t=20, b=40),
-            xaxis_title="Hour (UTC)",
-        )
-        st.plotly_chart(fig_heat, use_container_width=True)
-
-        # Hour of Day P&L
-        st.subheader("P&L by Hour")
-        hour_pnl = df_time.groupby("hour")["signed_pnl"].sum().reset_index()
-        hour_pnl.columns = ["Hour", "PnL"]
-        fig_hour = go.Figure(go.Bar(
-            x=hour_pnl["Hour"],
-            y=hour_pnl["PnL"],
-            marker_color=hour_pnl["PnL"].apply(
-                lambda x: "#22c55e" if x >= 0 else "#ef4444"
-            ),
-        ))
-        fig_hour.update_layout(
-            template="plotly_dark",
-            paper_bgcolor="#0e1117",
-            plot_bgcolor="#0e1117",
-            yaxis_title="USD" if USE_USD else "SOL",
-            xaxis_title="Hour (UTC)",
-            height=280,
-            margin=dict(l=40, r=20, t=20, b=40),
-        )
-        st.plotly_chart(fig_hour, use_container_width=True)
-
-# ═════════════════════════════════════════════
-# TAB 5: MC ANALYSIS
-# ═════════════════════════════════════════════
-with tab_mc:
-    if df_positions.empty:
-        st.info("No positions found.")
-    else:
-        pnl_col = "pnl_usd" if USE_USD else "pnl_sol"
-        df_mc = df_positions.copy()
-
-        mc_stats = df_mc.groupby("mc_bucket", observed=False).agg(
-            total_pnl=(pnl_col, "sum"),
-            count=(pnl_col, "count"),
-            wins=(pnl_col, lambda x: (x > 0).sum()),
-        ).reset_index()
-        mc_stats["win_rate"] = (mc_stats["wins"] / mc_stats["count"] * 100).fillna(0)
-        # Ensure correct order
-        mc_stats["mc_bucket"] = pd.Categorical(
-            mc_stats["mc_bucket"], categories=MC_BUCKET_ORDER, ordered=True
-        )
-        mc_stats = mc_stats.sort_values("mc_bucket")
-
-        # P&L by MC bucket
-        st.subheader("P&L by Market Cap at Entry")
-        fig_mc_pnl = go.Figure(go.Bar(
-            x=mc_stats["mc_bucket"].astype(str),
-            y=mc_stats["total_pnl"],
-            marker_color=mc_stats["total_pnl"].apply(
-                lambda x: "#22c55e" if x >= 0 else "#ef4444"
-            ),
-        ))
-        fig_mc_pnl.update_layout(
-            template="plotly_dark",
-            paper_bgcolor="#0e1117",
-            plot_bgcolor="#0e1117",
-            yaxis_title="USD" if USE_USD else "SOL",
-            height=300,
-            margin=dict(l=40, r=20, t=20, b=40),
-        )
-        st.plotly_chart(fig_mc_pnl, use_container_width=True)
-
-        # Win rate by MC bucket
-        st.subheader("Win Rate by Market Cap")
-        fig_mc_wr = go.Figure(go.Bar(
-            x=mc_stats["mc_bucket"].astype(str),
-            y=mc_stats["win_rate"],
-            marker_color="#6366f1",
-            text=mc_stats["win_rate"].apply(lambda x: f"{x:.0f}%"),
-            textposition="outside",
-        ))
-        fig_mc_wr.update_layout(
-            template="plotly_dark",
-            paper_bgcolor="#0e1117",
-            plot_bgcolor="#0e1117",
-            yaxis_title="Win Rate %",
-            yaxis_range=[0, 100],
-            height=300,
-            margin=dict(l=40, r=20, t=20, b=40),
-        )
-        st.plotly_chart(fig_mc_wr, use_container_width=True)
-
-        # Summary table
-        st.subheader("MC Bucket Summary")
-        mc_table = mc_stats[["mc_bucket", "count", "wins", "win_rate", "total_pnl"]].copy()
-        mc_table.columns = ["MC Bucket", "Positions", "Wins", "Win Rate %", "Total P&L"]
-        mc_table["Win Rate %"] = mc_table["Win Rate %"].apply(lambda x: f"{x:.1f}%")
-        mc_table["Total P&L"] = mc_table["Total P&L"].apply(lambda x: fmt_val(x, USE_USD))
-        st.dataframe(mc_table, use_container_width=True, hide_index=True)
-
-# ═════════════════════════════════════════════
-# TAB 6: OPEN POSITIONS
-# ═════════════════════════════════════════════
-with tab_open:
-    if df_positions.empty:
-        st.info("No positions found.")
-    else:
-        open_pos = df_positions[df_positions["status"] == "OPEN BUY"].copy()
-        if open_pos.empty:
-            st.info("No open positions.")
+            fig.update_layout(**CHART, height=320, showlegend=False, hovermode="x unified",
+                xaxis=dict(gridcolor="#1e1e30", zeroline=False),
+                yaxis=dict(gridcolor="#1e1e30", zeroline=True, zerolinecolor="#334155",
+                           tickprefix=pfx, ticksuffix=sfx))
+            st.plotly_chart(fig, use_container_width=True)
         else:
-            buy_col = "buy_usd" if USE_USD else "sol_in"
-            open_pos["unrealized_display"] = open_pos["unrealized_usd"]
-            open_pos["roi_open"] = np.where(
-                open_pos[buy_col] > 0,
-                (open_pos["unrealized_usd"] / open_pos[buy_col] * 100),
-                0,
-            )
+            st.info("No closed trades in this period.")
 
-            in_profit = open_pos[open_pos["unrealized_usd"] > 0].sort_values(
-                "unrealized_usd", ascending=False
-            )
-            in_loss = open_pos[open_pos["unrealized_usd"] <= 0].sort_values(
-                "unrealized_usd", ascending=True
-            )
+        period_pnl  = cp[pnl_col].sum() if not cp.empty else 0
+        period_n    = len(cp)
+        period_wins = int((cp["pnl_sol"] > 0).sum()) if not cp.empty else 0
+        pk1,pk2,pk3 = st.columns(3)
+        pk1.metric(f"{period} P&L",     f"{pfx}{period_pnl:,.2f}{sfx}")
+        pk2.metric(f"{period} Closed",  f"{period_n:,}")
+        pk3.metric(f"{period} Win Rate",f"{round(period_wins/period_n*100,1) if period_n else 0}%")
 
-            sub_profit, sub_loss = st.tabs(["🟢 In Profit", "🔴 In Loss"])
+    with cr:
+        st.markdown("## Monthly P&L")
+        mon = closed_pos.dropna(subset=["first_buy_dt", pnl_col]).copy()
+        mon = mon[(mon["first_buy_dt"] >= p_from) & (mon["first_buy_dt"] <= p_to)].copy()
+        if not mon.empty:
+            mon["month"] = mon["first_buy_dt"].dt.to_period("M").astype(str)
+            mg2 = mon.groupby("month")[pnl_col].sum().reset_index().sort_values("month").tail(24)
+            fig2 = go.Figure(go.Bar(
+                x=mg2["month"], y=mg2[pnl_col],
+                marker_color=["#00ff88" if v > 0 else "#ff4466" for v in mg2[pnl_col]],
+                hovertemplate=f"<b>%{{x}}</b><br>{pfx}%{{y:,.2f}}{sfx}<extra></extra>",
+            ))
+            fig2.update_layout(**CHART, height=380, bargap=0.15,
+                xaxis=dict(gridcolor="#1e1e30", tickangle=-45),
+                yaxis=dict(gridcolor="#1e1e30", tickprefix=pfx, ticksuffix=sfx))
+            st.plotly_chart(fig2, use_container_width=True)
+        else:
+            st.info("No data for this period.")
 
-            for sub_tab, sub_df, label in [
-                (sub_profit, in_profit, "profitable"),
-                (sub_loss, in_loss, "losing"),
-            ]:
-                with sub_tab:
-                    if sub_df.empty:
-                        st.info(f"No {label} open positions.")
-                    else:
-                        df_open_show = pd.DataFrame()
-                        df_open_show["Name"] = sub_df["token_name"]
-                        df_open_show["Ticker"] = sub_df["token_symbol"]
-                        df_open_show["MC at Buy"] = sub_df["mc_at_buy"].apply(
-                            lambda x: f"${x:,.0f}" if x > 0 else "—"
-                        )
-                        df_open_show["Balance"] = sub_df["remaining_tokens"].apply(
-                            lambda x: f"{x:,.0f}"
-                        )
-                        df_open_show["Buy Amt"] = sub_df[buy_col].apply(
-                            lambda x: fmt_val(x, USE_USD)
-                        )
-                        df_open_show["Current Value"] = sub_df["current_value"].apply(
-                            lambda x: fmt_val(x, USE_USD)
-                        )
-                        df_open_show["Price"] = sub_df["current_price"].apply(
-                            lambda x: f"${x:.8f}" if x < 0.01 else f"${x:.4f}"
-                        )
-                        df_open_show["Unrealised P&L"] = sub_df["unrealized_usd"].apply(
-                            lambda x: fmt_val(x, True)
-                        )
-                        df_open_show["ROI"] = sub_df["roi_open"].apply(
-                            lambda x: f"{x:+,.1f}%"
-                        )
-                        df_open_show["First Buy"] = sub_df["first_buy_dt"].apply(
-                            lambda x: x.strftime("%Y-%m-%d") if pd.notna(x) else "—"
-                        )
-                        st.dataframe(df_open_show, use_container_width=True,
-                                     height=500, hide_index=True)
-                        st.caption(f"{len(sub_df)} {label} open positions")
+    st.markdown("## Yearly Breakdown")
+    yr = closed_pos.dropna(subset=["first_buy_dt"]).copy()
+    yr["year"] = yr["first_buy_dt"].dt.year
+    yg = yr.groupby("year").agg(
+        pnl_usd=("pnl_usd","sum"), pnl_sol=("pnl_sol","sum"),
+        wins=("pnl_sol", lambda x:(x>0).sum()),
+        losses=("pnl_sol", lambda x:(x<=0).sum()),
+        trades=("pnl_sol","count"),
+    ).reset_index()
+    yg["wr"] = (yg["wins"]/(yg["wins"]+yg["losses"])*100).round(1)
+    for _, row in yg.iterrows():
+        c1,c2,c3,c4,c5 = st.columns(5)
+        c1.metric(f"{int(row['year'])} P&L",
+                  f"${row['pnl_usd']:,.0f}" if USE_USD else f"{row['pnl_sol']:,.1f} SOL")
+        c2.metric("Alt P&L",
+                  f"{row['pnl_sol']:,.1f} SOL" if USE_USD else f"${row['pnl_usd']:,.0f}")
+        c3.metric("Trades",   f"{int(row['trades']):,}")
+        c4.metric("Win Rate", f"{row['wr']}%")
+        c5.metric("W / L",    f"{int(row['wins'])} / {int(row['losses'])}")
+
+# ════════════════════════════════════════════════════════════════
+# TAB 2 — Trade History
+# ════════════════════════════════════════════════════════════════
+with tab2:
+    st.markdown("## Trade History")
+    st.caption("MC is per-trade (implied price × supply). P&L and ROI reflect the full position for that token.")
+
+    ca, cb, cc = st.columns([2, 2, 1])
+    with ca:
+        trd_filter = st.selectbox("Filter",
+            ["All Trades","Buys Only","Sells Only","Unique Buys Only"],
+            key="trd_filter", help="Unique Buys = first-ever buy per token only")
+    with cb:
+        sort_t = st.selectbox("Sort by", ["Time","Amount","ROI","P&L"], key="tsrt")
+    with cc:
+        sort_dir_t = st.radio("", ["↓","↑"], key="tsrt_dir", horizontal=True)
+    trd_asc = (sort_dir_t == "↑")
+
+    dt = ftrd.copy()
+    # Always filter out dust trades (< $1 / < 0.01 SOL) — these are account rent
+    # deposits or test transactions, not real trades
+    dust_mask = (dt["usd_value"].fillna(0) >= 1.0) | (dt["sol_amount"].fillna(0) >= 0.01)
+    dt = dt[dust_mask]
+    if trd_filter == "Buys Only":         dt = dt[dt["action"] == "BUY"]
+    elif trd_filter == "Sells Only":      dt = dt[dt["action"] == "SELL"]
+    elif trd_filter == "Unique Buys Only":dt = dt[(dt["action"]=="BUY") & (dt["is_first_buy"]==True)]
+
+    def enrich_trade(row):
+        mint   = row["token_mint"]
+        info   = mint_lookup.get(mint, {})
+        sym    = info.get("display_symbol") or mint[:8]
+        pnl    = info.get("pnl_usd")  if USE_USD else info.get("pnl_sol")
+        roi    = info.get("roi_pct")  if USE_USD else info.get("roi_sol_pct")
+        mc     = fmt_mc_trade(mint, row.get("sol_amount"), row.get("token_amount"), row.get("sol_price"))
+        status = info.get("status", "")
+        upnl   = info.get("unrealized_pnl_usd")
+        rem    = info.get("remaining_tokens") or 0
+        cpx    = info.get("current_price_usd") or 0
+        if status == "CLOSED":
+            unreal = '<span class="neutral">—</span>'
+        elif not _is_null(upnl) and rem and cpx:
+            unreal = fmt_pnl_usd(upnl)
+        else:
+            unreal = '<span class="neutral">No price</span>'
+        return sym, mc, pnl, roi, unreal
+
+    if len(dt):
+        cols = [enrich_trade(r) for _, r in dt.iterrows()]
+        dt = dt.copy()
+        dt["_sym"], dt["_mc"], dt["_pnl"], dt["_roi"], dt["_upnl"] = zip(*cols)
+    else:
+        dt = dt.copy()
+        dt["_sym"] = dt["_mc"] = dt["_pnl"] = dt["_roi"] = dt["_upnl"] = None
+
+    sort_map = {
+        "Time":   "datetime_utc",
+        "Amount": "usd_value" if USE_USD else "sol_amount",
+        "ROI":    "_roi",
+        "P&L":    "_pnl",
+    }
+    dt = dt.sort_values(sort_map[sort_t], ascending=trd_asc, na_position="last")
+
+    amt_hdr = "Amount (USD)" if USE_USD else "Amount (SOL)"
+    rows = []
+    for _, r in dt.iterrows():
+        mint = r["token_mint"]
+        act  = ('<span class="profit" style="font-weight:700">BUY</span>'
+                if r["action"] == "BUY"
+                else '<span class="loss" style="font-weight:700">SELL</span>')
+        amt  = (f"${r['usd_value']:,.2f}" if pd.notna(r.get("usd_value")) else "N/A") if USE_USD else \
+               (f"{r['sol_amount']:.4f}"  if pd.notna(r.get("sol_amount")) else "N/A")
+        pnl  = fmt_pnl_usd(r["_pnl"]) if USE_USD else fmt_pnl_sol(r["_pnl"])
+        rows.append({
+            "Time (UTC)":   str(r["datetime_utc"])[:19],
+            "Action":       act,
+            "Ticker":       ticker_link(mint, r["_sym"]),
+            "MC at Trade":  r["_mc"] or "Unknown",
+            amt_hdr:        amt,
+            "Realised P&L": pnl,
+            "Unreal P&L":   r["_upnl"] if r.get("_upnl") else '<span class="neutral">—</span>',
+            "ROI":          fmt_roi(r["_roi"]),
+            "1st Buy":      "✅" if r.get("is_first_buy") else "",
+        })
+    st.markdown(html_table(pd.DataFrame(rows), height=560), unsafe_allow_html=True)
+    st.caption(f"{len(rows):,} trades shown")
+
+# ════════════════════════════════════════════════════════════════
+# TAB 3 — Positions
+# ════════════════════════════════════════════════════════════════
+with tab3:
+    st.markdown("## Position Analysis")
+
+    sc1, _, sc3 = st.columns([2, 2, 1])
+    with sc1:
+        sort_by = st.selectbox("Sort by", ["P&L","ROI","Buy Amount"], key="psrt")
+    with sc3:
+        sort_dir_p = st.radio("", ["↓","↑"], key="psrt_dir", horizontal=True)
+    pos_asc = (sort_dir_p == "↑")
+
+    sort_col_map = {
+        "P&L":        "pnl_usd"  if USE_USD else "pnl_sol",
+        "ROI":        "roi_pct"  if USE_USD else "roi_sol_pct",
+        "Buy Amount": "buy_usd"  if USE_USD else "sol_in",
+    }
+    dp = fpos.copy().sort_values(sort_col_map[sort_by], ascending=pos_asc, na_position="last")
+
+    rows = []
+    for _, r in dp.iterrows():
+        mint  = r["mint"]
+        stat  = ('<span class="badge-closed">CLOSED</span>' if r["status"]=="CLOSED"
+                 else '<span class="badge-open">OPEN</span>')
+        if USE_USD:
+            buy_amt  = f"${r['buy_usd']:,.2f}"  if pd.notna(r.get("buy_usd"))  else "N/A"
+            sell_amt = f"${r['sell_usd']:,.2f}" if pd.notna(r.get("sell_usd")) else "N/A"
+            pnl_v    = fmt_pnl_usd(r.get("pnl_usd"))
+            roi_v    = fmt_roi(r.get("roi_pct"))
+        else:
+            buy_amt  = f"{r['sol_in']:.4f} SOL"  if pd.notna(r.get("sol_in"))  else "N/A"
+            sell_amt = f"{r['sol_out']:.4f} SOL" if pd.notna(r.get("sol_out")) else "N/A"
+            pnl_v    = fmt_pnl_sol(r.get("pnl_sol"))
+            roi_v    = fmt_roi(r.get("roi_sol_pct"))
+        bal = r.get("remaining_tokens")
+        bal_s = f"{float(bal):,.0f}" if not _is_null(bal) and float(bal) > 0 else "—"
+        rows.append({
+            "Name":      (r["display_name"] or "")[:22],
+            "Ticker":    ticker_link(mint, r["display_symbol"]),
+            "Status":    stat,
+            "MC at Buy": r.get("mc_value_display") or "Unknown",
+            "MC Bucket": r.get("mc_bucket_display") or "Unknown",
+            "Buys":      int(r["num_buys"])  if not _is_null(r.get("num_buys"))  else 0,
+            "Sells":     int(r["num_sells"]) if not _is_null(r.get("num_sells")) else 0,
+            "Balance":   bal_s,
+            "Buy Amt":   buy_amt,
+            "Sell Amt":  sell_amt,
+            "P&L":       pnl_v,
+            "ROI":       roi_v,
+            "First Buy": str(r["first_buy"])[:16] if r.get("first_buy") else "—",
+        })
+    st.markdown(html_table(pd.DataFrame(rows), height=560), unsafe_allow_html=True)
+    st.caption(f"{len(rows):,} positions  |  Balance = unsold tokens remaining")
+
+# ════════════════════════════════════════════════════════════════
+# TAB 4 — Time Analysis
+# ════════════════════════════════════════════════════════════════
+with tab4:
+    st.markdown("## Time-Based Performance")
+    days_order = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
+    pnl_col    = "pnl_usd" if USE_USD else "pnl_sol"
+    tick_pfx   = "$"       if USE_USD else ""
+    tick_sfx   = ""        if USE_USD else " SOL"
+
+    col_dow, col_hod = st.columns(2)
+
+    with col_dow:
+        st.markdown("#### Day of Week — P&L")
+        cp2 = closed_pos.dropna(subset=["first_buy_dt", pnl_col]).copy()
+        cp2["dow"] = cp2["first_buy_dt"].dt.day_name()
+        dg = cp2.groupby("dow").agg(
+            pnl=(pnl_col,"sum"),
+            wins=("pnl_sol", lambda x:(x>0).sum()),
+            losses=("pnl_sol", lambda x:(x<=0).sum()),
+            count=("pnl_sol","count"),
+        ).reindex(days_order).reset_index()
+        dg["Win%"] = (dg["wins"]/(dg["wins"]+dg["losses"])*100).round(1)
+        fig_d = go.Figure(go.Bar(
+            x=dg["dow"], y=dg["pnl"],
+            marker_color=["#00ff88" if v>0 else "#ff4466" for v in dg["pnl"]],
+            text=dg["Win%"].apply(lambda x: f"{x:.0f}%"),
+            textposition="outside",
+            textfont=dict(family="Space Mono", size=10, color="#94a3b8"),
+            hovertemplate=f"<b>%{{x}}</b><br>{tick_pfx}%{{y:,.2f}}{tick_sfx}<extra></extra>",
+        ))
+        fig_d.update_layout(**CHART, height=300,
+            xaxis=dict(gridcolor="#1e1e30"),
+            yaxis=dict(gridcolor="#1e1e30", tickprefix=tick_pfx, ticksuffix=tick_sfx))
+        st.plotly_chart(fig_d, use_container_width=True)
+        tbl_d = dg[["dow","count","wins","losses","Win%","pnl"]].copy()
+        tbl_d.columns = ["Day","Trades","W","L","Win%","P&L"]
+        tbl_d["P&L"]  = tbl_d["P&L"].apply(lambda x: f"${x:,.0f}" if USE_USD else f"{x:,.2f} SOL")
+        tbl_d["Win%"] = tbl_d["Win%"].apply(lambda x: f"{x:.1f}%")
+        st.dataframe(tbl_d, hide_index=True, use_container_width=True, height=280)
+
+    with col_hod:
+        st.markdown("#### Hour × Day Heatmap")
+        hm = ftrd.copy()
+        hm["dow"] = hm["datetime_utc"].dt.day_name()
+        hp   = hm.groupby(["dow","hour_utc"]).size().reset_index(name="n")
+        hpiv = hp.pivot(index="dow", columns="hour_utc", values="n").fillna(0)
+        hpiv = hpiv.reindex([d for d in days_order if d in hpiv.index])
+        fig_h = go.Figure(go.Heatmap(
+            z=hpiv.values,
+            x=[f"{h:02d}:00" for h in hpiv.columns],
+            y=hpiv.index.tolist(),
+            colorscale=[[0,"rgb(10,10,15)"],[0.4,"rgb(0,60,40)"],[1,"rgb(0,255,136)"]],
+            showscale=False,
+            hovertemplate="<b>%{y} %{x}</b><br>Trades: %{z}<extra></extra>",
+        ))
+        fig_h.update_layout(**CHART, height=290, xaxis=dict(tickangle=-45))
+        st.plotly_chart(fig_h, use_container_width=True)
+
+        st.markdown("#### Hour of Day — P&L")
+        cp3 = closed_pos.dropna(subset=["first_buy", pnl_col]).copy()
+        cp3["hour"] = pd.to_datetime(cp3["first_buy"]).dt.hour
+        hg = cp3.groupby("hour")[pnl_col].sum().reindex(range(24), fill_value=0)
+        fig_hd = go.Figure(go.Bar(
+            x=[f"{h:02d}:00" for h in hg.index], y=hg.values,
+            marker_color=["#00ff88" if v>0 else "#ff4466" for v in hg.values],
+            hovertemplate=f"<b>%{{x}}</b><br>{tick_pfx}%{{y:,.2f}}{tick_sfx}<extra></extra>",
+        ))
+        fig_hd.update_layout(**CHART, height=260,
+            xaxis=dict(gridcolor="#1e1e30", tickangle=-45),
+            yaxis=dict(gridcolor="#1e1e30", tickprefix=tick_pfx, ticksuffix=tick_sfx))
+        st.plotly_chart(fig_hd, use_container_width=True)
+
+# ════════════════════════════════════════════════════════════════
+# TAB 5 — MC Analysis
+# ════════════════════════════════════════════════════════════════
+with tab5:
+    st.markdown("## Market Cap at Trade Analysis")
+    st.caption("MC at buy calculated using implied token price × total supply.")
+    mc_order = ["<4K","4K-9K","10K-19K","20K-29K","30K-99K","100K-999K","1M+","Unknown"]
+    pnl_col  = "pnl_usd" if USE_USD else "pnl_sol"
+
+    mg = closed_pos.groupby("mc_bucket_display").agg(
+        pnl=(pnl_col,"sum"),
+        wins=("pnl_sol", lambda x:(x>0).sum()),
+        losses=("pnl_sol", lambda x:(x<=0).sum()),
+        count=("pnl_sol","count"),
+    ).reset_index()
+    mg.columns = ["mc_bucket","pnl","wins","losses","count"]
+    mg = mg.set_index("mc_bucket").reindex(
+        [m for m in mc_order if m in mg.index]
+    ).reset_index()
+    mg["win_rate"] = (mg["wins"]/(mg["wins"]+mg["losses"])*100).round(1)
+    mg["avg_pnl"]  = (mg["pnl"]/mg["count"]).round(2)
+
+    cm1, cm2 = st.columns(2)
+    with cm1:
+        st.markdown("#### P&L by MC Bucket")
+        fig_mc = go.Figure(go.Bar(
+            x=mg["mc_bucket"], y=mg["pnl"],
+            marker_color=["#00ff88" if v>0 else "#ff4466" for v in mg["pnl"]],
+            text=mg["win_rate"].apply(lambda x: f"{x:.0f}%"),
+            textposition="outside",
+            textfont=dict(family="Space Mono", size=10, color="#94a3b8"),
+            hovertemplate="<b>%{x}</b><br>%{y:,.2f}<extra></extra>",
+        ))
+        fig_mc.update_layout(**CHART, height=320,
+            xaxis=dict(gridcolor="#1e1e30"),
+            yaxis=dict(gridcolor="#1e1e30",
+                       tickprefix="$" if USE_USD else "",
+                       ticksuffix=""  if USE_USD else " SOL"))
+        st.plotly_chart(fig_mc, use_container_width=True)
+    with cm2:
+        st.markdown("#### Win Rate by MC Bucket")
+        fig_wr = go.Figure(go.Bar(
+            x=mg["mc_bucket"], y=mg["win_rate"], marker_color="#00aaff",
+            text=mg["win_rate"].apply(lambda x: f"{x:.0f}%"),
+            textposition="outside",
+            textfont=dict(family="Space Mono", size=10, color="#94a3b8"),
+        ))
+        fig_wr.add_hline(y=50, line_dash="dash", line_color="#334155",
+                         annotation_text="50%", annotation_font_color="#64748b")
+        fig_wr.update_layout(**CHART, height=320,
+            xaxis=dict(gridcolor="#1e1e30"),
+            yaxis=dict(gridcolor="#1e1e30", range=[0,115], ticksuffix="%"))
+        st.plotly_chart(fig_wr, use_container_width=True)
+
+    st.markdown("#### Summary Table")
+    mt = mg[["mc_bucket","count","wins","losses","win_rate","pnl","avg_pnl"]].copy()
+    mt.columns = ["MC Range","Closed","Wins","Losses","Win %","P&L","Avg P&L/Trade"]
+    fmt_fn = (lambda x: f"${x:,.0f}") if USE_USD else (lambda x: f"{x:,.2f} SOL")
+    mt["P&L"]           = mt["P&L"].apply(fmt_fn)
+    mt["Avg P&L/Trade"] = mt["Avg P&L/Trade"].apply(fmt_fn)
+    mt["Win %"]         = mt["Win %"].apply(lambda x: f"{x:.1f}%")
+    st.dataframe(mt, hide_index=True, use_container_width=True)
+
+# ════════════════════════════════════════════════════════════════
+# TAB 6 — Open Positions
+# ════════════════════════════════════════════════════════════════
+with tab6:
+    st.markdown("## Open Positions")
+    oa = fpos[fpos["status"] == "OPEN BUY"].copy()
+    oa["unrealized_roi"] = (
+        oa["unrealized_pnl_usd"] / oa["buy_usd"].where(oa["buy_usd"] > 0) * 100
+    ).round(1)
+
+    ip = oa[oa["unrealized_pnl_usd"]  > 0].sort_values("unrealized_pnl_usd", ascending=False)
+    il = oa[oa["unrealized_pnl_usd"]  < 0].sort_values("unrealized_pnl_usd", ascending=True)
+    nd = oa[oa["unrealized_pnl_usd"].isna()]
+
+    s1,s2,s3,s4 = st.columns(4)
+    s1.metric("Total Open",        f"{len(oa):,}")
+    s2.metric("✅ In Profit",       f"{len(ip):,}", delta=f"${ip['unrealized_pnl_usd'].sum():,.0f}")
+    s3.metric("❌ In Loss",         f"{len(il):,}", delta=f"${il['unrealized_pnl_usd'].sum():,.0f}")
+    s4.metric("💀 No Price/Rugged", f"{len(nd):,}", delta=f"-${nd['buy_usd'].sum():,.0f}")
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    def open_rows(df):
+        rows = []
+        for _, r in df.iterrows():
+            mint   = r["mint"]
+            cost_u = (float(r.get("buy_usd") or 0)) - (float(r.get("sell_usd") or 0))
+            cost_s = (float(r.get("sol_in")  or 0)) - (float(r.get("sol_out")  or 0))
+            curr_p = float(r.get("current_price_usd") or 0)
+            rem    = float(r.get("remaining_tokens") or 0)
+            curr_v = rem * curr_p
+            upnl   = r.get("unrealized_pnl_usd")
+            uroi   = r.get("unrealized_roi")
+            bal_s  = f"{rem:,.0f}" if rem > 0 else "—"
+            buy_a  = f"${cost_u:,.2f}" if USE_USD else f"{cost_s:.4f} SOL"
+            pnl_v  = fmt_pnl_usd(upnl)
+            rows.append({
+                "Name":       (r["display_name"] or "")[:22],
+                "Ticker":     ticker_link(mint, r["display_symbol"]),
+                "MC at Buy":  r.get("mc_value_display") or "Unknown",
+                "Balance":    bal_s,
+                "Buy Amt":    buy_a,
+                "Curr Val":   f"${curr_v:,.2f}" if curr_v > 0 else "N/A",
+                "Price":      f"${curr_p:.8f}"  if curr_p > 0 else "N/A",
+                "Unreal P&L": pnl_v,
+                "ROI":        fmt_roi(uroi),
+                "First Buy":  str(r["first_buy"])[:16] if r.get("first_buy") else "—",
+            })
+        return pd.DataFrame(rows)
+
+    sub1, sub2 = st.tabs(["✅ In Profit", "❌ In Loss"])
+    with sub1: st.markdown(html_table(open_rows(ip), height=430), unsafe_allow_html=True)
+    with sub2: st.markdown(html_table(open_rows(il), height=430), unsafe_allow_html=True)
