@@ -25,8 +25,10 @@ import gdown
 # Format: "Display Name": "Google Drive File ID"
 # Get file ID from share link: https://drive.google.com/file/d/FILE_ID_HERE/view
 DRIVE_WALLETS = {
-    "Example Wallet": "PASTE_GOOGLE_DRIVE_FILE_ID_HERE",
-    # "Wallet 2": "ANOTHER_FILE_ID",
+    "HighWR53": "1Vh7dDNK9ACLUUM7llRICoiXZjo7Gi0QF",
+    "1hrHighWR": "11a3Ny8X1XewiZ4H1AkokTj8XV10e-EDN",
+    "20K2RNoDp": "12QsvOaMz0kNDifoYuMW6igfdZ7r3Rcs3",
+    "Investor": "15ZjBkoHAxXLuLyQMI4I5Cn3VBSvHwZVY",
 }
 
 CACHE_DIR = "wallet_data"
