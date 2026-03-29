@@ -63,6 +63,8 @@ button[data-baseweb="tab"][aria-selected="true"]{color:#00ff88!important;border-
 # ══════════════════════════════════════════════════════════════════
 DRIVE_WALLETS = {
     # "Wallet Display Name": "Google Drive File ID",
+    "Investor":"1VKHSrudNYAv1Gg8XfRujtoiB1y8l29ic",
+    "1hrHighWr":"1Drvg7CXRGCYqwgkGSXQaaWlSGiIHby8y",
     "HighWR53": "1dkN_NDEY89SkwA_e5Yn6sOqiRSGitI-M",
 }
 
