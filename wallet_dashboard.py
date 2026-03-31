@@ -68,6 +68,8 @@ DRIVE_WALLETS = {
     "SMhigh_man":"1wLpAkNU6xhA3TJO2WB-BU5mAGfk7yGFN",
     "Migratoor":"17F-BJTbXLbQEOqN2_0qlgXuPoZFOEXr-",
     "SarahMilady":"1Sl9lcG6MhhKodtWg-ZcYN1AlmD-gMzQF",
+    "Test100":"14iOL2u-hHotOKZTy-u8IJC-sjDElWonC",
+    "TEST52Wr":"1lJ4LYmXtid789i3_OvG8sfE_T33GZNXE",
     "HighWR53": "1dkN_NDEY89SkwA_e5Yn6sOqiRSGitI-M",
 }
 
