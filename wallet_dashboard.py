@@ -66,8 +66,6 @@ DRIVE_WALLETS = {
     "Investor":"1VKHSrudNYAv1Gg8XfRujtoiB1y8l29ic",
     "1hrHighWr":"1Drvg7CXRGCYqwgkGSXQaaWlSGiIHby8y",
     "SMhigh_man":"1wLpAkNU6xhA3TJO2WB-BU5mAGfk7yGFN",
-    "Migratoor":"17F-BJTbXLbQEOqN2_0qlgXuPoZFOEXr-",
-    "SarahMilady":"1Sl9lcG6MhhKodtWg-ZcYN1AlmD-gMzQF",
     "38HWr":"1OeFyBLAhGViQJb05Va1FyOPH3TidMBss",
     "TEST500":"1n12ax3n8cpW-x4S0dhDES53SgVGAHAny",
     "HighWR53": "1dkN_NDEY89SkwA_e5Yn6sOqiRSGitI-M",
