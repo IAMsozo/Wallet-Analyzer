@@ -70,8 +70,10 @@ DRIVE_WALLETS = {
     "Trial":"1BSJxHA7ouZ6e4F7jFl7y1bEi1KjFRG-z",
     "Trial2":"1bfitN8oL7fUwTIPWAUdEtk72BF4k4oPg",
     "VempNew":"1XsBBPZGl4ZrhdbdnFIbPJlRH0hp8i5dT",
-    "38HWr":"1OeFyBLAhGViQJb05Va1FyOPH3TidMBss",
+    "3rMax38HWr":"1OeFyBLAhGViQJb05Va1FyOPH3TidMBss",
+    "AllMnthWin":"1rji9GHNLTBUpKYpY4YRawAoY_HEFpW-W",
     "TEST500":"1n12ax3n8cpW-x4S0dhDES53SgVGAHAny",
+    "NewTrial":"1_rPKDRhYkcKsMF9uQFWbuvEEPDDBBjGt",
     "HighWR53": "1dkN_NDEY89SkwA_e5Yn6sOqiRSGitI-M",
 }
 
