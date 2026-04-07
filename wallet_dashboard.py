@@ -66,14 +66,10 @@ DRIVE_WALLETS = {
     "Investor":"1VKHSrudNYAv1Gg8XfRujtoiB1y8l29ic",
     "1hrHighWr":"1Drvg7CXRGCYqwgkGSXQaaWlSGiIHby8y",
     "SMhigh_man":"1wLpAkNU6xhA3TJO2WB-BU5mAGfk7yGFN",
-    "Nigga":"1R2Md04G-PVFqzNba1uI7lmyWq40-5RVJ",
-    "Trial":"1BSJxHA7ouZ6e4F7jFl7y1bEi1KjFRG-z",
-    "Trial2":"1bfitN8oL7fUwTIPWAUdEtk72BF4k4oPg",
-    "VempNew":"1XsBBPZGl4ZrhdbdnFIbPJlRH0hp8i5dT",
     "3rMax38HWr":"1OeFyBLAhGViQJb05Va1FyOPH3TidMBss",
-    "AllMnthWin":"1rji9GHNLTBUpKYpY4YRawAoY_HEFpW-W",
-    "TEST500":"1n12ax3n8cpW-x4S0dhDES53SgVGAHAny",
-    "NewTrial":"1_rPKDRhYkcKsMF9uQFWbuvEEPDDBBjGt",
+    "15mAllMnth":"1rji9GHNLTBUpKYpY4YRawAoY_HEFpW-W",
+    "1hrTEST500":"1n12ax3n8cpW-x4S0dhDES53SgVGAHAny",
+    "9ft":"1J2ZQXHaoMhwD9CwpEeoQRVOXjRNvslBJ",
     "HighWR53": "1dkN_NDEY89SkwA_e5Yn6sOqiRSGitI-M",
 }
 
