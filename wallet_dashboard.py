@@ -270,7 +270,7 @@ def fmt_mc_trade(mint, sol_amount, token_amount, sol_price):
     except: return "Unknown"
 
 def ticker_link(mint, sym):
-    return f'<a href="https://gmgn.ai/sol/token/{mint}" target="_blank" rel="noreferrer noopener" onclick="window.open(this.href, \'_blank\', \'noopener,noreferrer\'); window.focus(); return false;">{sym}</a>'
+    return f'<a href="https://gmgn.ai/sol/token/{mint}" target="_blank">{sym}</a>'
 
 CHART = dict(
     paper_bgcolor="#0a0a0f", plot_bgcolor="#0a0a0f",
