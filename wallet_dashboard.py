@@ -71,6 +71,7 @@ DRIVE_WALLETS = {
     "1hrTEST500":"1n12ax3n8cpW-x4S0dhDES53SgVGAHAny",
     "9ft":"1J2ZQXHaoMhwD9CwpEeoQRVOXjRNvslBJ",
     "HighWR53": "1dkN_NDEY89SkwA_e5Yn6sOqiRSGitI-M",
+    "NewHighWR53": "1qBllPGG_mI8aqxraw5Mre4VFpRAYEEgW",
 }
 
 # ── Download wallet files from Drive on startup ────────────────────
