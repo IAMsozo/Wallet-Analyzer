@@ -5,6 +5,8 @@ import pandas as pd
 import plotly.graph_objects as go
 from datetime import timedelta
 
+import pipeline  # incremental swap fetcher
+
 st.set_page_config(
     page_title="Wallet Analyzer", page_icon="📊",
     layout="wide", initial_sidebar_state="expanded"
@@ -118,22 +120,74 @@ if not wallet_labels:
     )
     st.stop()
 
-# ── Wallet refresh button ──────────────────────────────────────────
-col_sel, col_ref = st.columns([5, 1])
+# ── Wallet selector + refresh buttons ──────────────────────────────
+col_sel, col_reload, col_fetch = st.columns([4, 1, 1])
 with col_sel:
     selected_label = st.selectbox("🔑 Wallet", list(wallet_labels.keys()),
                                   key="wallet_selector")
-with col_ref:
+with col_reload:
     st.markdown("<br>", unsafe_allow_html=True)
-    if st.button("🔄 Refresh", help="Re-download latest data from Drive"):
-        # Delete cached files so they re-download
+    if st.button("🔄 Reload", help="Re-download from Google Drive (discards any incremental updates)"):
         for path in wallet_labels.values():
             if os.path.exists(path):
                 os.remove(path)
         st.cache_data.clear()
         st.rerun()
+with col_fetch:
+    st.markdown("<br>", unsafe_allow_html=True)
+    fetch_clicked = st.button(
+        "⚡ Fetch New",
+        help="Fetch new swaps from Helius since last update (incremental)"
+    )
 
 selected_file = wallet_labels[selected_label]
+
+# ── Incremental fetch handler ──────────────────────────────────────
+if fetch_clicked:
+    api_key = st.secrets.get("HELIUS_API_KEY")
+    if not api_key:
+        st.error(
+            "**HELIUS_API_KEY not found in Streamlit secrets.**\n\n"
+            "Add it in your Streamlit Cloud app settings under **Secrets**:\n"
+            "```\nHELIUS_API_KEY = \"your-key-here\"\n```"
+        )
+    else:
+        status_box = st.empty()
+        progress_msgs = []
+
+        def _progress(msg):
+            progress_msgs.append(msg)
+            # Only show the last 3 messages to avoid UI noise
+            status_box.info("⚡ " + " · ".join(progress_msgs[-3:]))
+
+        try:
+            with open(selected_file) as f:
+                wallet_json = json.load(f)
+
+            updated_json, stats = pipeline.update_wallet_data(
+                wallet_json, api_key, progress_cb=_progress
+            )
+
+            if stats.get("error"):
+                status_box.error(f"❌ {stats['error']}")
+            else:
+                with open(selected_file, "w") as f:
+                    json.dump(updated_json, f)
+
+                if stats["new_trades"] == 0:
+                    status_box.success(
+                        "✅ No new swaps found. Token prices refreshed."
+                    )
+                else:
+                    status_box.success(
+                        f"✅ Added {stats['new_trades']} new trades "
+                        f"({stats['new_mints']} new tokens, "
+                        f"{stats['mc_updated']} MC-at-buy computed)"
+                    )
+                st.cache_data.clear()
+                st.rerun()
+        except Exception as e:
+            status_box.error(f"❌ Fetch failed: {e}")
 
 # ══════════════════════════════════════════════════════════════════
 # DATA LOADING
