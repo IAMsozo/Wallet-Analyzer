@@ -68,10 +68,12 @@ DRIVE_WALLETS = {
     "Investor":"1VKHSrudNYAv1Gg8XfRujtoiB1y8l29ic",
     "1hrHighWr":"1Drvg7CXRGCYqwgkGSXQaaWlSGiIHby8y",
     "SMhigh_man":"1wLpAkNU6xhA3TJO2WB-BU5mAGfk7yGFN",
+    "3rMax38HWr":"1OeFyBLAhGViQJb05Va1FyOPH3TidMBss",
     "15mAllMnth":"1rji9GHNLTBUpKYpY4YRawAoY_HEFpW-W",
     "1hrTEST500":"1n12ax3n8cpW-x4S0dhDES53SgVGAHAny",
     "9ft":"1J2ZQXHaoMhwD9CwpEeoQRVOXjRNvslBJ",
     "HighWR53": "1dkN_NDEY89SkwA_e5Yn6sOqiRSGitI-M",
+    "NewHighWR53": "1qBllPGG_mI8aqxraw5Mre4VFpRAYEEgW",
 }
 
 # ── Download wallet files from Drive on startup ────────────────────
@@ -143,6 +145,20 @@ with col_fetch:
 
 selected_file = wallet_labels[selected_label]
 
+# ── Show any toast left over from the previous run ────────────────
+# st.rerun() wipes the UI, so success/error messages set right before
+# a rerun would flash and vanish. We stash them in session_state and
+# display them at the top of the next run, then clear.
+_pending = st.session_state.pop("fetch_toast", None)
+if _pending:
+    kind, text = _pending
+    if kind == "success":
+        st.success(text)
+    elif kind == "error":
+        st.error(text)
+    else:
+        st.info(text)
+
 # ── Incremental fetch handler ──────────────────────────────────────
 if fetch_clicked:
     api_key = st.secrets.get("HELIUS_API_KEY")
@@ -170,7 +186,8 @@ if fetch_clicked:
             )
 
             if stats.get("error"):
-                status_box.error(f"❌ {stats['error']}")
+                st.session_state["fetch_toast"] = ("error", f"❌ {stats['error']}")
+                st.rerun()
             else:
                 with open(selected_file, "w") as f:
                     json.dump(updated_json, f)
@@ -197,19 +214,21 @@ if fetch_clicked:
                     drive_msg = " · ⚠️ Drive write-back disabled (no service account secret)"
 
                 if stats["new_trades"] == 0:
-                    status_box.success(
-                        "✅ No new swaps found. Token prices refreshed." + drive_msg
-                    )
+                    toast_text = "✅ No new swaps found. Token prices refreshed." + drive_msg
                 else:
-                    status_box.success(
+                    toast_text = (
                         f"✅ Added {stats['new_trades']} new trades "
                         f"({stats['new_mints']} new tokens, "
                         f"{stats['mc_updated']} MC-at-buy computed)" + drive_msg
                     )
+
+                # Stash for the next run (survives st.rerun)
+                st.session_state["fetch_toast"] = ("success", toast_text)
                 st.cache_data.clear()
                 st.rerun()
         except Exception as e:
-            status_box.error(f"❌ Fetch failed: {e}")
+            st.session_state["fetch_toast"] = ("error", f"❌ Fetch failed: {e}")
+            st.rerun()
 
 # ══════════════════════════════════════════════════════════════════
 # DATA LOADING
