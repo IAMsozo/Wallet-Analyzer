@@ -68,12 +68,10 @@ DRIVE_WALLETS = {
     "Investor":"1VKHSrudNYAv1Gg8XfRujtoiB1y8l29ic",
     "1hrHighWr":"1Drvg7CXRGCYqwgkGSXQaaWlSGiIHby8y",
     "SMhigh_man":"1wLpAkNU6xhA3TJO2WB-BU5mAGfk7yGFN",
-    "3rMax38HWr":"1OeFyBLAhGViQJb05Va1FyOPH3TidMBss",
     "15mAllMnth":"1rji9GHNLTBUpKYpY4YRawAoY_HEFpW-W",
     "1hrTEST500":"1n12ax3n8cpW-x4S0dhDES53SgVGAHAny",
     "9ft":"1J2ZQXHaoMhwD9CwpEeoQRVOXjRNvslBJ",
     "HighWR53": "1dkN_NDEY89SkwA_e5Yn6sOqiRSGitI-M",
-    "NewHighWR53": "1qBllPGG_mI8aqxraw5Mre4VFpRAYEEgW",
 }
 
 # ── Download wallet files from Drive on startup ────────────────────
