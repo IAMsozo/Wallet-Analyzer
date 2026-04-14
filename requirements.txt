@@ -2,3 +2,7 @@ streamlit>=1.32.0
 plotly>=5.18.0
 pandas>=2.0.0
 gdown>=5.1.0
+requests
+google-api-python-client
+google-auth
+

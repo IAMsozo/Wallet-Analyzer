@@ -68,12 +68,10 @@ DRIVE_WALLETS = {
     "Investor":"1VKHSrudNYAv1Gg8XfRujtoiB1y8l29ic",
     "1hrHighWr":"1Drvg7CXRGCYqwgkGSXQaaWlSGiIHby8y",
     "SMhigh_man":"1wLpAkNU6xhA3TJO2WB-BU5mAGfk7yGFN",
-    "3rMax38HWr":"1OeFyBLAhGViQJb05Va1FyOPH3TidMBss",
     "15mAllMnth":"1rji9GHNLTBUpKYpY4YRawAoY_HEFpW-W",
     "1hrTEST500":"1n12ax3n8cpW-x4S0dhDES53SgVGAHAny",
     "9ft":"1J2ZQXHaoMhwD9CwpEeoQRVOXjRNvslBJ",
     "HighWR53": "1dkN_NDEY89SkwA_e5Yn6sOqiRSGitI-M",
-    "NewHighWR53": "1qBllPGG_mI8aqxraw5Mre4VFpRAYEEgW",
 }
 
 # ── Download wallet files from Drive on startup ────────────────────
@@ -86,7 +84,8 @@ except ImportError:
 
 os.makedirs("wallet_data", exist_ok=True)
 
-wallet_labels = {}
+wallet_labels = {}    # label → local path
+wallet_file_ids = {}  # label → Drive file ID (for write-back)
 for display_name, file_id in DRIVE_WALLETS.items():
     if file_id == "YOUR_DRIVE_FILE_ID_HERE":
         continue
@@ -109,8 +108,10 @@ for display_name, file_id in DRIVE_WALLETS.items():
             gen  = meta.get("generated_at", "")[:10]
             label = f"{display_name}  |  {addr[:8]}...{addr[-6:]}  |  {gen}"
             wallet_labels[label] = local_path
+            wallet_file_ids[label] = file_id
         except:
             wallet_labels[display_name] = local_path
+            wallet_file_ids[display_name] = file_id
 
 if not wallet_labels:
     st.error(
@@ -174,15 +175,36 @@ if fetch_clicked:
                 with open(selected_file, "w") as f:
                     json.dump(updated_json, f)
 
+                # Persist to Google Drive so updates survive container recycles.
+                # If the service account secret is missing or upload fails, we
+                # still keep the local update — the user just won't get
+                # cross-recycle persistence until they fix the auth.
+                drive_msg = ""
+                sa_info = st.secrets.get("GOOGLE_SERVICE_ACCOUNT_JSON")
+                if sa_info:
+                    import drive_io
+                    # st.secrets returns an AttrDict for TOML tables; convert
+                    # to a plain dict for the google-auth library
+                    sa_dict = dict(sa_info) if not isinstance(sa_info, dict) else sa_info
+                    file_id = wallet_file_ids.get(selected_label)
+                    if file_id:
+                        _progress("Saving to Google Drive...")
+                        ok, msg = drive_io.upload_wallet_json(
+                            file_id, updated_json, sa_dict
+                        )
+                        drive_msg = f" · 💾 {msg}" if ok else f" · ⚠️ {msg}"
+                else:
+                    drive_msg = " · ⚠️ Drive write-back disabled (no service account secret)"
+
                 if stats["new_trades"] == 0:
                     status_box.success(
-                        "✅ No new swaps found. Token prices refreshed."
+                        "✅ No new swaps found. Token prices refreshed." + drive_msg
                     )
                 else:
                     status_box.success(
                         f"✅ Added {stats['new_trades']} new trades "
                         f"({stats['new_mints']} new tokens, "
-                        f"{stats['mc_updated']} MC-at-buy computed)"
+                        f"{stats['mc_updated']} MC-at-buy computed)" + drive_msg
                     )
                 st.cache_data.clear()
                 st.rerun()
